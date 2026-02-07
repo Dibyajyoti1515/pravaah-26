@@ -19,6 +19,7 @@ This document outlines the architecture and design of an AI-powered customer ser
 - Query response time: 2-5 seconds
 - Support 10+ concurrent multi-turn sessions
 - 95%+ pattern detection accuracy
+- Dataset: 84,465 utterances filtered to 51,534 (61% retention focusing on critical conversations)
 
 ## 2. System Architecture
 
@@ -124,12 +125,22 @@ graph TB
 
 **Sentiment Analysis Module**
 
-- **Model**: Transformer-based sentiment classifier
+- **Model**: RoBERTa transformer-based sentiment classifier
 - **Granularity**: Turn-level sentiment scores (-1 to +1)
+- **Sentiment Categories**:
+  - Negative: score < 0
+  - Neutral: score = 0
+  - Positive: score > 0
 - **Features**:
   - Sentiment polarity (negative/neutral/positive)
   - Intensity measurement
   - Trajectory tracking (improving/declining/stable)
+- **Data Filtering Strategy**:
+  - Keep all utterances with negative sentiment (< 0)
+  - Keep all utterances matching critical intent patterns (from predefined array)
+  - Remove utterances with positive sentiment (> 0) that don't match critical patterns
+  - Remove neutral utterances (= 0) that don't match critical patterns
+  - Result: Dataset reduced from 84,465 to 51,534 utterances (focus on problematic conversations)
 
 **Pattern Detection Module**
 
@@ -154,6 +165,12 @@ graph TB
   *Financial Patterns*:
   - `financial_dispute`: "charge", "refund", "billing"
   - `unauthorized_charge`: "didn't authorize", "fraud"
+
+- **Critical Intent Array**: Predefined list of high-priority patterns used for data filtering
+- **Filtering Logic**: 
+  - Utterances matching critical intent patterns are always retained
+  - Combined with negative sentiment filter to focus on problematic interactions
+  - Reduces noise from positive/neutral non-critical conversations
 
 **Aggregation Engine**
 
@@ -226,30 +243,40 @@ graph TB
 graph TD
     A[Raw JSON Dataset<br/>5,037 transcripts<br/>84,465 utterances] --> B[Data Exploration]
     B --> C[Utterance Extraction]
-    C --> D[Sentiment Analysis<br/>RoBERTa Model]
-    D --> E[Pattern Detection<br/>50+ patterns]
-    E --> F[Conversation Aggregation]
-    F --> G[Vector Indexing<br/>ChromaDB]
-    G --> H[utterances_final.csv]
-    G --> I[conversation_level_summary.csv]
-    G --> J[chroma_db_turns3/]
+    C --> D[Sentiment Analysis<br/>RoBERTa Model<br/>-1 to +1 scores]
+    D --> E[Pattern Detection<br/>50+ patterns<br/>Critical Intent Array]
+    E --> F[Data Filtering<br/>Keep: sentiment < 0<br/>Keep: critical patterns<br/>Remove: positive/neutral non-critical]
+    F --> G[Filtered Dataset<br/>51,534 utterances<br/>61% retention]
+    G --> H[Conversation Aggregation]
+    H --> I[Vector Indexing<br/>ChromaDB]
+    I --> J[utterances_final.csv]
+    I --> K[conversation_level_summary.csv]
+    I --> L[chroma_db_turns3/]
     
     style A fill:#e1f5ff
     style D fill:#fff3e0
     style E fill:#f3e5f5
+    style F fill:#ffebee
     style G fill:#e8f5e9
-    style H fill:#fff9c4
-    style I fill:#fff9c4
+    style I fill:#e8f5e9
     style J fill:#fff9c4
+    style K fill:#fff9c4
+    style L fill:#fff9c4
 ```
 
 **Key Stages:**
 1. **Data Exploration** - Extract domains (7), intents (41), metadata
-2. **Utterance Extraction** - Flatten nested conversations to turn-level records
+2. **Utterance Extraction** - Flatten nested conversations to turn-level records (84,465 utterances)
 3. **Sentiment Analysis** - RoBERTa transformer model (-1 to +1 scores)
-4. **Pattern Detection** - Keyword matching for escalation, emotion, service issues
-5. **Aggregation** - Calculate conversation-level metrics and trajectories
-6. **Vector Indexing** - ChromaDB with 768-dim embeddings (multi-qa-mpnet-base-dot-v1)
+4. **Pattern Detection** - Keyword matching for escalation, emotion, service issues (50+ patterns)
+5. **Data Filtering** - Apply sentiment and critical intent filters:
+   - Keep: sentiment < 0 (negative)
+   - Keep: utterances matching critical intent array
+   - Remove: sentiment > 0 (positive) without critical patterns
+   - Remove: sentiment = 0 (neutral) without critical patterns
+   - Result: 51,534 utterances (61% of original dataset)
+6. **Aggregation** - Calculate conversation-level metrics and trajectories
+7. **Vector Indexing** - ChromaDB with 768-dim embeddings (multi-qa-mpnet-base-dot-v1)
 
 ### 3.2 Query Processing Flow
 
@@ -329,6 +356,58 @@ def detect_patterns(text, patterns_dict):
                 break
     
     return list(set(detected))
+```
+
+**Data Filtering Algorithm**:
+```python
+def filter_critical_utterances(df, critical_intent_array):
+    """
+    Filter dataset to focus on problematic conversations
+    
+    Args:
+        df: DataFrame with 'sentiment' and 'patterns' columns
+        critical_intent_array: List of high-priority pattern names
+    
+    Returns:
+        Filtered DataFrame (84,465 -> 51,534 utterances)
+    """
+    # Keep all negative sentiment utterances
+    negative_mask = df['sentiment'] < 0
+    
+    # Keep utterances matching critical intent patterns
+    critical_mask = df['patterns'].apply(
+        lambda patterns: any(p in critical_intent_array for p in patterns)
+    )
+    
+    # Combine filters: keep if negative OR critical pattern
+    keep_mask = negative_mask | critical_mask
+    
+    # Apply filter
+    filtered_df = df[keep_mask].copy()
+    
+    print(f"Original: {len(df)} utterances")
+    print(f"Filtered: {len(filtered_df)} utterances")
+    print(f"Retention: {len(filtered_df)/len(df)*100:.1f}%")
+    
+    return filtered_df
+
+# Example usage
+CRITICAL_INTENT_ARRAY = [
+    'escalation_request',
+    'escalation_threat',
+    'extreme_frustration',
+    'anger_expression',
+    'financial_dispute',
+    'unauthorized_charge',
+    'threat_of_legal_action',
+    'broken_promise',
+    'repeat_issue'
+]
+
+filtered_df = filter_critical_utterances(turn_df, CRITICAL_INTENT_ARRAY)
+# Output: Original: 84465 utterances
+#         Filtered: 51534 utterances
+#         Retention: 61.0%
 ```
 
 **Critical Turn Identification**:

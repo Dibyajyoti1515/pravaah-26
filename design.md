@@ -25,39 +25,109 @@ This document outlines the architecture and design of an AI-powered customer ser
 ### 2.1 High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Data Ingestion Layer                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ JSON Parser  │  │ CSV Loader   │  │ Preprocessor │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Processing Pipeline                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Sentiment   │  │   Pattern    │  │ Aggregation  │      │
-│  │  Analysis    │  │  Detection   │  │   Engine     │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Storage & Indexing                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   ChromaDB   │  │  CSV Store   │  │   Metadata   │      │
-│  │   (Vector)   │  │  (Tabular)   │  │    Cache     │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Query & Analysis Layer                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   Semantic   │  │    Causal    │  │  Multi-Turn  │      │
-│  │   Retrieval  │  │   Analysis   │  │   Reasoning  │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          RAW DATA SOURCES                                    │
+│  ┌──────────────────────────┐  ┌──────────────────────────────────────┐    │
+│  │ Conversational_Transcript │  │        utterances.csv                │    │
+│  │      _Dataset.json        │  │    (84,465 utterances)               │    │
+│  │   (5,037 transcripts)     │  │                                      │    │
+│  └──────────────────────────┘  └──────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     PREPROCESSING LAYER (preprocessing/)                     │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌─────────────────┐  │
+│  │  Data Exploration    │  │  Conversation        │  │  Utterance      │  │
+│  │  & Analysis          │  │  Overview            │  │  Extraction     │  │
+│  │  (Jupyter Notebook)  │  │  Generation          │  │  & Parsing      │  │
+│  └──────────────────────┘  └──────────────────────┘  └─────────────────┘  │
+│                                                                              │
+│  Output: conversations_overview.csv, utterances_partial_0_10000.csv         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     DATA INGESTION LAYER (Codebase/)                         │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐ │
+│  │  JSON Parser     │  │  CSV Loader      │  │  Data Normalizer         │ │
+│  │  - Parse nested  │  │  - Load raw      │  │  - Lowercase text        │ │
+│  │    conversation  │  │    utterances    │  │  - Extract metadata      │ │
+│  │  - Extract turns │  │  - Validate      │  │  - Create turn numbers   │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   PROCESSING PIPELINE (Codebase/app.ipynb)                   │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌─────────────────┐  │
+│  │  Sentiment Analysis  │  │  Pattern Detection   │  │  Aggregation    │  │
+│  │  ─────────────────   │  │  ──────────────────  │  │  Engine         │  │
+│  │  • Transformer-based │  │  • 50+ patterns      │  │  ─────────────  │  │
+│  │  • Turn-level scores │  │  • Keyword matching  │  │  • Critical     │  │
+│  │  • Range: -1 to +1   │  │  • Context-aware     │  │    turn count   │  │
+│  │  • Trajectory calc   │  │  • Escalation flags  │  │  • Sentiment    │  │
+│  │                      │  │  • Emotion detection │  │    trajectory   │  │
+│  │                      │  │                      │  │  • Pattern      │  │
+│  │                      │  │                      │  │    aggregation  │  │
+│  └──────────────────────┘  └──────────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    STORAGE & INDEXING LAYER (Codebase/)                      │
+│  ┌──────────────────────────┐  ┌──────────────────────────────────────┐   │
+│  │  ChromaDB Vector Store   │  │  CSV Storage                         │   │
+│  │  ────────────────────────│  │  ────────────────────────────────────│   │
+│  │  • Collection: evidence_ │  │  • utterances_final.csv              │   │
+│  │    turns                 │  │    (84,465 rows with sentiment)      │   │
+│  │  • Embedding: multi-qa-  │  │  • conversation_level_summary.csv    │   │
+│  │    mpnet-base-dot-v1     │  │    (5,037 conversations aggregated)  │   │
+│  │  • Dimension: 768        │  │  • Columns: transcript_id, domain,   │   │
+│  │  • Persistent storage    │  │    intent, patterns, sentiment,      │   │
+│  │  • Metadata: sentiment,  │  │    outcome, trajectory               │   │
+│  │    patterns, outcome     │  │                                      │   │
+│  └──────────────────────────┘  └──────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    QUERY & ANALYSIS LAYER (Codebase/app.ipynb)               │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌─────────────────┐  │
+│  │  Semantic Retrieval  │  │  Causal Analysis     │  │  Multi-Turn     │  │
+│  │  ──────────────────  │  │  ────────────────    │  │  Reasoning      │  │
+│  │  • Query expansion   │  │  • LLM: Gemini 2.5   │  │  ───────────    │  │
+│  │    (Gemini)          │  │  • Category          │  │  • Session      │  │
+│  │  • Vector similarity │  │    classification    │  │    management   │  │
+│  │  • Top-K retrieval   │  │  • Evidence          │  │  • Evidence     │  │
+│  │  • Context building  │  │    synthesis         │  │    locking      │  │
+│  │                      │  │  • Citation          │  │  • Context      │  │
+│  │                      │  │    generation        │  │    preservation │  │
+│  └──────────────────────┘  └──────────────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          OUTPUT LAYER (Output/)                              │
+│  ┌──────────────────────────────────┐  ┌──────────────────────────────┐    │
+│  │  task1_queries.csv               │  │  Task_2.csv                  │    │
+│  │  ────────────────────────────────│  │  ────────────────────────────│    │
+│  │  • Single-turn causal analysis   │  │  • Multi-turn conversations  │    │
+│  │  • Query categorization          │  │  • Session-based reasoning   │    │
+│  │  • Structured explanations       │  │  • Follow-up Q&A             │    │
+│  │  • Evidence citations            │  │  • Locked evidence sets      │    │
+│  └──────────────────────────────────┘  └──────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────────────────────────────┐
+                    │      EXTERNAL SERVICES              │
+                    │  ┌───────────────────────────────┐  │
+                    │  │  Google Gemini API            │  │
+                    │  │  • Query expansion            │  │
+                    │  │  • Category classification    │  │
+                    │  │  • Causal explanation gen     │  │
+                    │  └───────────────────────────────┘  │
+                    └─────────────────────────────────────┘
 ```
 
 
@@ -190,15 +260,211 @@ This document outlines the architecture and design of an AI-powered customer ser
 
 ### 3.1 Preprocessing Flow
 
+The preprocessing workflow transforms raw conversational data into structured, analysis-ready formats through multiple stages:
+
 ```
-Raw JSON → Parse Transcripts → Extract Turns → Sentiment Analysis
-                                                        ↓
-                                                Pattern Detection
-                                                        ↓
-                                                Aggregate Metrics
-                                                        ↓
-                                        Save to CSV + Index in ChromaDB
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        STAGE 1: DATA EXPLORATION                         │
+│  Location: preprocessing/detaild_analysis_data.ipynb                     │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Input:  Conversational_Transcript_Dataset.json                          │
+│  Output: conversations_overview.csv, utterances_partial_0_10000.csv      │
+│                                                                           │
+│  Operations:                                                              │
+│  1. Load JSON dataset (5,037 transcripts)                                │
+│  2. Count total utterances (84,465 turns)                                │
+│  3. Extract unique domains (7 domains):                                  │
+│     • E-commerce & Retail                                                │
+│     • Healthcare Services                                                │
+│     • Banking & Finance                                                  │
+│     • Insurance                                                          │
+│     • Telecommunications                                                 │
+│     • Technology Support                                                 │
+│     • Travel & Hospitality                                               │
+│  4. Extract unique intents (41 intent categories)                        │
+│  5. Generate conversation-level overview with metadata                   │
+│  6. Create partial utterance dataset for testing                         │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STAGE 2: UTTERANCE EXTRACTION                         │
+│  Location: Codebase/app.ipynb (preprocessing cells)                      │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Input:  Conversational_Transcript_Dataset.json, utterances.csv          │
+│  Output: Structured DataFrame with turn-level data                       │
+│                                                                           │
+│  Operations:                                                              │
+│  1. Parse nested conversation structure                                  │
+│  2. Flatten to turn-level records                                        │
+│  3. Extract metadata per turn:                                           │
+│     • transcript_id (UUID format)                                        │
+│     • turn_no (sequential number)                                        │
+│     • speaker (Agent/Customer)                                           │
+│     • text (utterance content)                                           │
+│     • domain (business category)                                         │
+│     • intent (call purpose)                                              │
+│     • reason_for_call (detailed description)                             │
+│     • short_intent (abbreviated intent)                                  │
+│  4. Normalize text (lowercase, clean whitespace)                         │
+│  5. Validate data integrity                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STAGE 3: SENTIMENT ANALYSIS                           │
+│  Location: Codebase/app.ipynb (sentiment processing)                     │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Input:  Turn-level DataFrame                                            │
+│  Output: DataFrame with sentiment scores                                 │
+│                                                                           │
+│  Operations:                                                              │
+│  1. Load transformer-based sentiment model                               │
+│  2. Process each utterance:                                              │
+│     • Tokenize text                                                      │
+│     • Generate sentiment predictions                                     │
+│     • Convert to polarity score (-1 to +1)                               │
+│  3. Add sentiment column to DataFrame                                    │
+│  4. Calculate sentiment statistics:                                      │
+│     • Average sentiment per conversation                                 │
+│     • Minimum sentiment (most negative)                                  │
+│     • Sentiment trajectory (improving/declining/stable)                  │
+│  5. Performance: ~1,200 utterances/minute                                │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STAGE 4: PATTERN DETECTION                            │
+│  Location: Codebase/app.ipynb (pattern matching)                         │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Input:  DataFrame with sentiment                                        │
+│  Output: DataFrame with detected patterns                                │
+│                                                                           │
+│  Operations:                                                              │
+│  1. Define 50+ pattern categories with keywords                          │
+│  2. For each utterance:                                                  │
+│     • Convert text to lowercase                                          │
+│     • Match against pattern keywords                                     │
+│     • Detect multiple patterns per turn                                  │
+│  3. Pattern categories detected:                                         │
+│     • Escalation: escalation_request, escalation_threat                  │
+│     • Emotional: extreme_frustration, anger_expression                   │
+│     • Service: broken_promise, unmet_expectations                        │
+│     • Financial: financial_dispute, unauthorized_charge                  │
+│     • Agent: empathy, validation, solution_offered                       │
+│     • Resolution: successful_resolution, follow_up_commitment            │
+│  4. Store patterns as list per turn                                      │
+│  5. Performance: ~2,500 utterances/minute                                │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STAGE 5: CONVERSATION AGGREGATION                     │
+│  Location: Codebase/app.ipynb (aggregation engine)                       │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Input:  Turn-level DataFrame with sentiment & patterns                  │
+│  Output: conversation_level_summary.csv                                  │
+│                                                                           │
+│  Operations:                                                              │
+│  1. Group by transcript_id                                               │
+│  2. Calculate conversation-level metrics:                                │
+│     • total_turns: Count of utterances                                   │
+│     • critical_turn_count: Turns with extreme sentiment or patterns      │
+│     • critical_turn_numbers: List of critical turn indices               │
+│     • unique_patterns: Deduplicated pattern list                         │
+│     • pattern_count: Total unique patterns                               │
+│     • avg_sentiment: Mean sentiment across turns                         │
+│     • min_sentiment: Most negative sentiment                             │
+│     • sentiment_trajectory: Overall trend                                │
+│     • outcome: resolved/escalation classification                        │
+│  3. Critical turn identification:                                        │
+│     • Sentiment < -0.7                                                   │
+│     • High-priority patterns present                                     │
+│     • Customer speaker                                                   │
+│  4. Save aggregated summary (5,037 rows)                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STAGE 6: VECTOR INDEXING                              │
+│  Location: Codebase/app.ipynb (ChromaDB indexing)                        │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Input:  utterances_final.csv                                            │
+│  Output: chroma_db_turns3/ (persistent vector store)                     │
+│                                                                           │
+│  Operations:                                                              │
+│  1. Initialize ChromaDB persistent client                                │
+│  2. Create/get collection "evidence_turns"                               │
+│  3. Configure embedding function:                                        │
+│     • Model: multi-qa-mpnet-base-dot-v1                                  │
+│     • Dimension: 768                                                     │
+│     • Device: CUDA (GPU) or CPU                                          │
+│  4. Batch process utterances (5,000 per batch):                          │
+│     • Generate embeddings for text                                       │
+│     • Create document IDs: {transcript_id}_{turn_no}                     │
+│     • Attach metadata:                                                   │
+│       - transcript_id, turn_no, speaker                                  │
+│       - sentiment, patterns, outcome                                     │
+│  5. Index all 84,465 utterances                                          │
+│  6. Persist to disk for reuse                                            │
+│  7. Performance: ~5,000 documents/batch                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    STAGE 7: FINAL OUTPUT                                 │
+│  Location: Codebase/                                                     │
+│  ────────────────────────────────────────────────────────────────────   │
+│  Outputs:                                                                 │
+│  1. utterances_final.csv (84,465 rows)                                   │
+│     • All turn-level data with sentiment and patterns                    │
+│  2. conversation_level_summary.csv (5,037 rows)                          │
+│     • Aggregated conversation metrics                                    │
+│  3. chroma_db_turns3/ (vector database)                                  │
+│     • Semantic search index                                              │
+│     • Persistent storage                                                 │
+│                                                                           │
+│  Ready for:                                                               │
+│  • Semantic retrieval queries                                            │
+│  • Causal analysis generation                                            │
+│  • Multi-turn reasoning                                                  │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### 3.1.1 Preprocessing Statistics
+
+**Dataset Overview:**
+- Total Transcripts: 5,037
+- Total Utterances: 84,465
+- Unique Domains: 7
+- Unique Intents: 41
+- Average Turns per Conversation: ~16.8
+- Sentiment Range: -0.954 to +0.978
+
+**Domain Distribution:**
+- E-commerce & Retail
+- Healthcare Services
+- Banking & Finance
+- Insurance
+- Telecommunications
+- Technology Support
+- Travel & Hospitality
+
+**Intent Categories (Sample):**
+- Delivery Investigation
+- Fraud Alert Investigation
+- Account Access Issues
+- Service Interruptions
+- Escalation - Repeated Service Failures
+- Escalation - Threat of Legal Action
+- Multiple Issues (various combinations)
+- Business Events (System Outage, Product Recall, etc.)
+
+**Pattern Detection Coverage:**
+- 50+ unique patterns identified
+- Average 8-12 patterns per conversation
+- Most common: empathy, solution_offered, high_urgency
+- Critical patterns: escalation_request, extreme_frustration, financial_dispute
 
 ### 3.2 Query Processing Flow
 
